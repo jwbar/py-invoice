@@ -1,0 +1,180 @@
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, HRFlowable, Image, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+from datetime import datetime
+import os
+
+# Register the Courier font
+# pdfmetrics.registerFont(TTFont('Courier', 'Courier.ttf'))
+
+def generate_invoice(invoice_number, date, bill_to, items, total_amount, vat_amount, total_with_vat):
+    # Create the PDF document
+    pdf_filename = f"rechnung_{invoice_number}.pdf"
+    document = SimpleDocTemplate(pdf_filename, pagesize=A4)
+
+    # Define styles
+    styles = getSampleStyleSheet()
+    normal_style = styles['Normal']
+    normal_style.fontName = 'Courier'
+    
+    bold_style = ParagraphStyle(
+        'Bold',
+        fontName='Courier-Bold',
+        fontSize=12,
+        spaceAfter=12,
+        alignment=TA_RIGHT
+    )
+    
+    title_style = ParagraphStyle(
+        'Title',
+        fontName='Courier-Bold',
+        fontSize=16,
+        spaceAfter=12,
+        alignment=TA_CENTER
+    )
+
+    smaller_bold_style = ParagraphStyle(
+        'SmallerBold',
+        fontName='Courier-Bold',
+        fontSize=10,
+        alignment=TA_RIGHT  # No space after each total item
+    )
+
+    red_style = ParagraphStyle(
+        'RedText',
+        fontName='Courier-Bold',
+        fontSize=12,
+        textColor=colors.red,
+        spaceAfter=12,
+        alignment=TA_LEFT
+    )
+
+    # Add logo
+    logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+    logo = Image(logo_path)
+    logo.drawHeight = 200
+    logo.drawWidth = 200
+    elements = [logo]
+
+    # Add some space after the logo
+    elements.append(Spacer(1, 20))
+
+    # Title and Invoice Information
+    title = Paragraph(f"Rechnung #{invoice_number}", title_style)
+    date_paragraph = Paragraph(f"Datum: {date}", bold_style)
+    
+    # Bill to Information with Postcode before City and VAT number
+    bill_to_paragraph = Paragraph(
+        f"<b>Rechnung an:</b><br/>{bill_to['name']}<br/>{bill_to['street']}<br/>{bill_to['postcode']} {bill_to['city']}<br/>"
+        f"USt.-ID: {bill_to['vat_number']}",
+        normal_style
+    )
+
+    # Horizontal line between address and table
+    line1 = HRFlowable(width="75%", thickness=1, color=colors.black, spaceBefore=20, spaceAfter=20, hAlign='CENTER')
+
+    # Invoice Items Table
+    table_data = [["Beschreibung", "Betrag"]]
+    for item in items:
+        table_data.append([item['description'], item['amount']])
+
+    # Create the table
+    table = Table(table_data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.black),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Courier-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+
+    # Summary Section with smaller font size
+    summary = [
+        Spacer(1, 12),  # Space between table and totals
+        Paragraph(f"<b>Gesamtbetrag (ohne MwSt.):</b> {total_amount:.2f} €", smaller_bold_style),
+        Paragraph(f"<b>Mehrwertsteuer (19%):</b> {vat_amount:.2f} €", smaller_bold_style),
+        Paragraph(f"<b>Gesamtbetrag (mit MwSt.):</b> {total_with_vat:.2f} €", smaller_bold_style)
+    ]
+
+    # Horizontal line before footer
+    line2 = HRFlowable(width="75%", thickness=1, color=colors.black, spaceBefore=20, spaceAfter=20, hAlign='CENTER')
+
+    # Footer with payment terms and business details in bold
+    footer_note = Paragraph("Bitte zahlen Sie innerhalb von zwei Wochen.", red_style)
+
+    footer = Paragraph(
+        "<b>JYourName, YourAddress.</b><br/>"
+        "<b>USt.-ID: YourTAX| Steuer-Nr.: YourVat</b><br/><br/>"
+        "<b>Bankverbindung:</b><br/>", 
+        normal_style
+    )
+
+    bank_data = [
+        [
+            Paragraph(
+                "<b>YourBankInfo</b><br/>"
+                "IBAN: YourIBAN<br/>"
+                "BIC: YourBIC", normal_style),
+          
+        ]
+    ]
+
+    bank_table = Table(bank_data, colWidths="50%")
+    bank_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER')
+    ]))
+
+    # Build the PDF
+    elements.extend([title, date_paragraph, bill_to_paragraph, line1, table])
+    elements.extend(summary)  # Add totals with a space before them
+    elements.extend([line2, footer_note, footer, bank_table])
+
+    document.build(elements)
+
+    print(f"Rechnung erstellt: {pdf_filename}")
+
+def calculate_vat(amount, vat_rate=19):
+    """Calculate the VAT and the amount including VAT."""
+    vat_amount = amount * (vat_rate / 100)
+    total_with_vat = amount + vat_amount
+    return vat_amount, total_with_vat
+
+def main():
+    invoice_number = input("Geben Sie die Rechnungsnummer ein: ")
+    date = datetime.now().strftime("%Y-%m-%d")
+    
+    # Input billing address in multiple lines, including VAT number
+    bill_to = {
+        'name': input("Name des Empfängers: "),
+        'street': input("Straße und Hausnummer: "),
+        'postcode': input("Postleitzahl: "),
+        'city': input("Stadt: "),
+        'vat_number': input("USt.-ID: ")
+    }
+
+    items = []
+    while True:
+        description = input("Geben Sie die Artikelbeschreibung ein (oder tippen Sie 'fertig', um zu beenden): ")
+        if description.lower() == 'fertig':
+            break
+        quantity = int(input("Geben Sie die Menge ein: "))
+        unit_price = float(input("Geben Sie den Einzelpreis (ohne MwSt.) ein: "))
+        amount = quantity * unit_price
+        items.append({
+            'description': description,
+            'amount': f"{amount:.2f} €"
+        })
+
+    # Calculate totals
+    total_amount = sum(float(item['amount'].replace(' €', '')) for item in items)
+    vat_amount, total_with_vat = calculate_vat(total_amount)
+
+    # Generate the invoice PDF
+    generate_invoice(invoice_number, date, bill_to, items, total_amount, vat_amount, total_with_vat)
+
+if __name__ == "__main__":
+    main()
